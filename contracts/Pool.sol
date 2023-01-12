@@ -8,11 +8,13 @@ import "./interfaces/IPoolFactory.sol";
 import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 
-contract Pool is ERC1155Supply, IPool {
+abstract contract Pool is ERC1155Supply, IPool {
     event TokenAdded(address indexed acc, uint indexed id);
     event TokenRemoved(address indexed acc, uint indexed id);
 
     address public immutable COLLATERAL_TOKEN;
+    address public immutable TOKEN0;
+    address public immutable TOKEN1;
     address public immutable LOGIC;
     address immutable FEE_RECIPIENT;
     uint immutable FEE_NUM;
@@ -50,6 +52,7 @@ contract Pool is ERC1155Supply, IPool {
         // _setURI(uri);
         LOGIC = logic;
         COLLATERAL_TOKEN = ILogic(LOGIC).COLLATERAL_TOKEN();
+        (TOKEN0, TOKEN1) = this._getTokensInColateral();
         (FEE_RECIPIENT, FEE_NUM, FEE_DENOM) = IPoolFactory(msg.sender).getFeeInfo();
         emit PoolCreated(
             logic,
@@ -120,17 +123,24 @@ contract Pool is ERC1155Supply, IPool {
     ) external override returns (uint amountOut, uint fee) {
         bool needVerifying;
         (amountOut, needVerifying) = ILogic(LOGIC).swap(idIn, idOut);
-
+        // TODO: Compare idOut with base and quote
         if (idOut == CTOKEN_ID) {
             // TODO: fee can be get-arounded if LOGIC don't use the POOL token
             if (idIn == CP_ID) {
                 fee = amountOut * FEE_NUM / FEE_DENOM;
                 if (fee > 0) {
-                    TransferHelper.safeTransfer(COLLATERAL_TOKEN, FEE_RECIPIENT, fee);
+                    // Charge fee in which token or we skip it for now?
                     amountOut -= fee;
                 }
             }
-            TransferHelper.safeTransfer(COLLATERAL_TOKEN, recipient, amountOut);
+            /* TODO: idOut == BASE_ID or QUOTE
+            - If amountOut < token in pool: transfer to recipient
+            - Else: 
+                + Decompse
+                + Transfer token to recipient
+                + Recompose?
+            */
+
         } else {
             _mint(recipient, idOut, amountOut, '');
         }
@@ -147,6 +157,8 @@ contract Pool is ERC1155Supply, IPool {
 
         emit Swap(recipient, idIn, idOut, amountOut, fee);
     }
+
+    function _getTokensInColateral() internal virtual returns (address token1, address token2);
 
     // TODO: remove this in production
     function exhaust(address token) external {
