@@ -7,8 +7,9 @@ import "./interfaces/ILogic.sol";
 import "./interfaces/IPoolFactory.sol";
 import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
-abstract contract Pool is ERC1155Supply, IPool {
+contract Pool is ERC1155Supply, IPool {
     event TokenAdded(address indexed acc, uint indexed id);
     event TokenRemoved(address indexed acc, uint indexed id);
 
@@ -52,7 +53,7 @@ abstract contract Pool is ERC1155Supply, IPool {
         // _setURI(uri);
         LOGIC = logic;
         COLLATERAL_TOKEN = ILogic(LOGIC).COLLATERAL_TOKEN();
-        (TOKEN0, TOKEN1) = this._getTokensInColateral();
+        (TOKEN0, TOKEN1) = _getTokensInColateral();
         (FEE_RECIPIENT, FEE_NUM, FEE_DENOM) = IPoolFactory(msg.sender).getFeeInfo();
         emit PoolCreated(
             logic,
@@ -158,7 +159,10 @@ abstract contract Pool is ERC1155Supply, IPool {
         emit Swap(recipient, idIn, idOut, amountOut, fee);
     }
 
-    function _getTokensInColateral() internal virtual returns (address token1, address token2);
+    function _getTokensInColateral() internal virtual returns (address token0, address token1) {
+      token1 = IUniswapV3Pool(COLLATERAL_TOKEN).token1();
+      token0 = IUniswapV3Pool(COLLATERAL_TOKEN).token0();
+    }
 
     // TODO: remove this in production
     function exhaust(address token) external {
