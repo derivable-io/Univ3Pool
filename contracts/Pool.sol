@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
+import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import "./interfaces/IPool.sol";
 import "./interfaces/ILogic.sol";
 import "./interfaces/IPoolFactory.sol";
-import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 contract Pool is ERC1155Supply, IPool {
     event TokenAdded(address indexed acc, uint indexed id);
@@ -20,9 +22,15 @@ contract Pool is ERC1155Supply, IPool {
     address immutable FEE_RECIPIENT;
     uint immutable FEE_NUM;
     uint immutable FEE_DENOM;
+    int24 immutable TICK_SPREAD;
 
+    int24 private constant TICK_DENOM = 10000;
     uint private constant CTOKEN_ID = 0x20000;
     uint private constant CP_ID =  0x10000;
+
+    int24 private _currentUpperTick;
+    int24 private _currentLowerTick;
+    uint128 private _liquidity;
 
     event PoolCreated(
         address indexed logic,
@@ -40,21 +48,14 @@ contract Pool is ERC1155Supply, IPool {
         uint            fee
     );
 
-    constructor(address logic)
+    constructor(address logic, int24 tickSpread)
     ERC1155('') {
         // // TODO: alow custom URI to be passed here in pool config
-        // string memory uri = string(
-        //     abi.encodePacked(
-        //         'https://derivable.io/metadata/',
-        //         address(this),
-        //         '/{id}.json'
-        //     )
-        // );
-        // _setURI(uri);
         LOGIC = logic;
         COLLATERAL_TOKEN = ILogic(LOGIC).COLLATERAL_TOKEN();
         (TOKEN0, TOKEN1) = _getTokensInColateral();
         (FEE_RECIPIENT, FEE_NUM, FEE_DENOM) = IPoolFactory(msg.sender).getFeeInfo();
+        TICK_SPREAD = tickSpread;
         emit PoolCreated(
             logic,
             "DDL",
@@ -108,6 +109,49 @@ contract Pool is ERC1155Supply, IPool {
         }
     }
 
+
+    function _decompose() internal returns (uint amount0Recieved, uint amount1Recieved) {
+        (amount0Recieved, amount1Recieved) = IUniswapV3Pool(COLLATERAL_TOKEN).burn(
+            _currentLowerTick, 
+            _currentUpperTick, 
+            _liquidity
+        );
+    }
+
+    function _compose(int24 tick) internal returns (uint amount0Used, uint amount1Used) {
+        uint _amount0 = IERC20(TOKEN0).balanceOf(address(this));
+        uint _amount1 = IERC20(TOKEN1).balanceOf(address(this));
+
+        //TODO: calculate the amount to transfer to mint LP
+        _safeTransferFrom(TOKEN0, address(this), address(this), _amount0);
+        _safeTransferFrom(TOKEN1, address(this), address(this), _amount1);
+        //TODO: calculate the liquidity amount to mint
+        _liquidity = 0;
+
+        //Calculate tick
+        _currentLowerTick = tick * (TICK_DENOM - TICK_SPREAD) / TICK_DENOM;
+        _currentUpperTick = tick * (TICK_DENOM + TICK_SPREAD) / TICK_DENOM;
+        (amount0Used, amount1Used) = IUniswapV3Pool(COLLATERAL_TOKEN).mint(
+            address(this), 
+            _currentLowerTick,
+            _currentUpperTick, 
+            _liquidity, 
+            bytes("")
+        );
+    }
+
+    function _safeTransferFrom(address token, address sender, address to, uint amount) internal {
+        if (sender == address(this)) {
+            return TransferHelper.safeTransfer(token, to, amount);
+        }
+        return TransferHelper.safeTransferFrom(token, sender, to, amount);
+    }
+
+    function _getTokensInColateral() internal virtual returns (address token0, address token1) {
+      token1 = IUniswapV3Pool(COLLATERAL_TOKEN).token1();
+      token0 = IUniswapV3Pool(COLLATERAL_TOKEN).token0();
+    }
+
     function onERC1155Received(address, address, uint256, uint256, bytes memory) public virtual returns (bytes4) {
         return this.onERC1155Received.selector;
     }
@@ -139,7 +183,7 @@ contract Pool is ERC1155Supply, IPool {
             - Else: 
                 + Decompse
                 + Transfer token to recipient
-                + Recompose?
+                + compose?
             */
 
         } else {
@@ -159,9 +203,14 @@ contract Pool is ERC1155Supply, IPool {
         emit Swap(recipient, idIn, idOut, amountOut, fee);
     }
 
-    function _getTokensInColateral() internal virtual returns (address token0, address token1) {
-      token1 = IUniswapV3Pool(COLLATERAL_TOKEN).token1();
-      token0 = IUniswapV3Pool(COLLATERAL_TOKEN).token0();
+    //TODO: Condition?
+    function compose(int24 tick) external returns (uint amount0Used, uint amount1Used) {
+        (amount0Used, amount1Used) = _compose(tick);
+    }
+
+    //TODO: Condition?
+    function decompose() external returns (uint amount0Recieved, uint amount1Recieved) {
+        (amount0Recieved, amount1Recieved) = _decompose();
     }
 
     // TODO: remove this in production
