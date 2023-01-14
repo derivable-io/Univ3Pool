@@ -15,8 +15,10 @@ contract Pool {
   address public immutable COLLATERAL_TOKEN;
   address public immutable TOKEN0;
   address public immutable TOKEN1;
-  //UQ48x48
+  
+  //UQ64x96
   uint160 public immutable PRICE_RATE_X96;
+  uint160 public immutable SQRT_PRICE_RATE_X96;
 
   int24 private _currentUpperTick;
   int24 private _currentLowerTick;
@@ -26,6 +28,7 @@ contract Pool {
     COLLATERAL_TOKEN = collateralToken;
     (TOKEN0, TOKEN1) = _getTokensInColateral();
     PRICE_RATE_X96 = priceRateRange;
+    SQRT_PRICE_RATE_X96 = priceRateRange.sqrt();
   }
 
   function _decompose() internal returns (uint amount0Recieved, uint amount1Recieved) {
@@ -55,9 +58,8 @@ contract Pool {
     _decompose();
 
     (uint160 sqrtPriceX96,,,,,,) = IUniswapV3Pool(COLLATERAL_TOKEN).slot0();
-    uint160 sqrtRateX96 = PRICE_RATE_X96.sqrt();
-    uint160 sqrtHiPriceX96 = sqrtPriceX96.calSqrtHighPrice(sqrtRateX96);
-    uint160 sqrtLoPriceX96 = sqrtPriceX96.calSqrtLowPrice(sqrtRateX96);
+    uint160 sqrtHiPriceX96 = sqrtPriceX96.calSqrtHighPrice(SQRT_PRICE_RATE_X96);
+    uint160 sqrtLoPriceX96 = sqrtPriceX96.calSqrtLowPrice(SQRT_PRICE_RATE_X96);
 
     int24 upperTick = sqrtHiPriceX96.getTickAtSqrtRatio();
     int24 lowerTick = sqrtLoPriceX96.getTickAtSqrtRatio();
