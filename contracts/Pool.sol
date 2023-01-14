@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./libraries/UQ48x48.sol";
 import "./libraries/TickMath.sol";
 
 import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
@@ -11,23 +10,22 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 
 contract Pool {
-  using UQ48x48 for uint96;
   using TickMath for uint160;
 
   address public immutable COLLATERAL_TOKEN;
   address public immutable TOKEN0;
   address public immutable TOKEN1;
   //UQ48x48
-  uint96 public immutable PRICE_RATE_X48;
+  uint160 public immutable PRICE_RATE_X96;
 
   int24 private _currentUpperTick;
   int24 private _currentLowerTick;
   uint128 private _liquidity;
 
-  constructor(address collateralToken, uint96 priceRateRange) {
+  constructor(address collateralToken, uint160 priceRateRange) {
     COLLATERAL_TOKEN = collateralToken;
     (TOKEN0, TOKEN1) = _getTokensInColateral();
-    PRICE_RATE_X48 = priceRateRange;
+    PRICE_RATE_X96 = priceRateRange;
   }
 
   function _decompose() internal returns (uint amount0Recieved, uint amount1Recieved) {
@@ -51,23 +49,15 @@ contract Pool {
     token0 = IUniswapV3Pool(COLLATERAL_TOKEN).token0();
   }
 
-  function _calSqrtHighPrice(uint160 sqrtPriceX96, uint96 sqrtRateX48) internal pure returns (uint160) {
-    return uint160((uint256(sqrtPriceX96) * uint256(sqrtRateX48)) >> 48);
-  }
-
-  function _calSqrtLowPrice(uint160 sqrtPriceX96, uint96 sqrtRateX48) internal pure returns (uint160) {
-    return uint160((uint256(sqrtPriceX96) << 48) / uint256(sqrtRateX48));
-  }
-
   //TODO: Condition?
   function recompose(uint baseAmountDesired, uint quoteAmountDesired) external {
     //TODO: Decompose
     _decompose();
 
     (uint160 sqrtPriceX96,,,,,,) = IUniswapV3Pool(COLLATERAL_TOKEN).slot0();
-    uint96 sqrtRateX48 = PRICE_RATE_X48.sqrt();
-    uint160 sqrtHiPriceX96 = _calSqrtHighPrice(sqrtPriceX96, sqrtRateX48);
-    uint160 sqrtLoPriceX96 = _calSqrtLowPrice(sqrtPriceX96, sqrtRateX48);
+    uint160 sqrtRateX96 = PRICE_RATE_X96.sqrt();
+    uint160 sqrtHiPriceX96 = sqrtPriceX96.calSqrtHighPrice(sqrtRateX96);
+    uint160 sqrtLoPriceX96 = sqrtPriceX96.calSqrtLowPrice(sqrtRateX96);
 
     int24 upperTick = sqrtHiPriceX96.getTickAtSqrtRatio();
     int24 lowerTick = sqrtLoPriceX96.getTickAtSqrtRatio();

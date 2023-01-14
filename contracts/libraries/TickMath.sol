@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
+import "@uniswap/lib/contracts/libraries/Babylonian.sol";
+
 /// @title Math library for computing sqrt prices from ticks and vice versa
 /// @notice Computes sqrt price for ticks of size 1.0001, i.e. sqrt(1.0001^tick) as fixed point Q64.96 numbers. Supports
 /// prices between 2**-128 and 2**128
@@ -201,5 +203,26 @@ library TickMath {
         int24 tickHi = int24((log_sqrt10001 + 291339464771989622907027621153398088495) >> 128);
 
         tick = tickLow == tickHi ? tickLow : getSqrtRatioAtTick(tickHi) <= sqrtPriceX96 ? tickHi : tickLow;
+    }
+
+    /// @notice Calculates the highest squared root price as Q64.96 from current price and price range rate
+    /// @param sqrtPriceX96 The current sqrt ratio as a Q64.96
+    /// sqrtRateX96 The sqrt price range rate for which to compute the square root high price as a Q64.96
+    /// @return sqrtHighPriceX96 The squared high low price as a Q64.96
+    function calSqrtHighPrice(uint160 sqrtPriceX96, uint160 sqrtRateX96) internal pure returns (uint160) {
+        return uint160((uint256(sqrtPriceX96) * uint256(sqrtRateX96)) >> 96);
+    }
+
+    /// @notice Calculates the lowest squared root price as Q64.96 from current price and price range rate
+    /// @param sqrtPriceX96 The current sqrt ratio as a Q64.96
+    /// sqrtRateX96 The sqrt price range rate for which to compute the square root low price as a Q64.96
+    /// @return sqrtLowPriceX96 The squared root low price as a Q64.96
+    function calSqrtLowPrice(uint160 sqrtPriceX96, uint160 sqrtRateX96) internal pure returns (uint160) {
+        return uint160((uint256(sqrtPriceX96) << 96) / uint256(sqrtRateX96));
+    }
+
+    /// @notice Calculates the squared root as Q64.96 from a Q64.96 input
+    function sqrt(uint160 x) internal pure returns (uint160) {
+        return uint160(Babylonian.sqrt(uint256(x) << 96));
     }
 }
