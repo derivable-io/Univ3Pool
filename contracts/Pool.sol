@@ -17,18 +17,16 @@ contract Pool {
   address public immutable TOKEN1;
   
   //UQ64x96
-  uint160 public immutable PRICE_RATE_X96;
   uint160 public immutable SQRT_PRICE_RATE_X96;
 
   int24 private _currentUpperTick;
   int24 private _currentLowerTick;
   uint128 private _liquidity;
 
-  constructor(address collateralToken, uint160 priceRateRange) {
+  constructor(address collateralToken, uint160 sqrtPriceRateRangeX96) {
     COLLATERAL_TOKEN = collateralToken;
     (TOKEN0, TOKEN1) = _getTokensInColateral();
-    PRICE_RATE_X96 = priceRateRange;
-    SQRT_PRICE_RATE_X96 = priceRateRange.sqrt();
+    SQRT_PRICE_RATE_X96 = sqrtPriceRateRangeX96;
   }
 
   function _decompose() internal returns (uint amount0Recieved, uint amount1Recieved) {
