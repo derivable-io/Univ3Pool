@@ -205,22 +205,6 @@ library TickMath {
         tick = tickLow == tickHi ? tickLow : getSqrtRatioAtTick(tickHi) <= sqrtPriceX96 ? tickHi : tickLow;
     }
 
-    /// @notice Calculates the highest squared root price as Q64.96 from current price and price range rate
-    /// @param sqrtPriceX96 The current sqrt ratio as a Q64.96
-    /// sqrtRateX96 The sqrt price range rate for which to compute the square root high price as a Q64.96
-    /// @return sqrtHighPriceX96 The squared high low price as a Q64.96
-    function calSqrtHighPrice(uint160 sqrtPriceX96, uint160 sqrtRateX96) internal pure returns (uint160) {
-        return uint160((uint256(sqrtPriceX96) * uint256(sqrtRateX96)) >> 96);
-    }
-
-    /// @notice Calculates the lowest squared root price as Q64.96 from current price and price range rate
-    /// @param sqrtPriceX96 The current sqrt ratio as a Q64.96
-    /// sqrtRateX96 The sqrt price range rate for which to compute the square root low price as a Q64.96
-    /// @return sqrtLowPriceX96 The squared root low price as a Q64.96
-    function calSqrtLowPrice(uint160 sqrtPriceX96, uint160 sqrtRateX96) internal pure returns (uint160) {
-        return uint160((uint256(sqrtPriceX96) << 96) / uint256(sqrtRateX96));
-    }
-
     /// @notice Calculates the squared root as Q64.96 from a Q64.96 input
     function sqrt(uint160 x) internal pure returns (uint160) {
         return uint160(Babylonian.sqrt(uint256(x) << 96));
