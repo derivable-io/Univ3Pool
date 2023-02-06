@@ -10,6 +10,8 @@ import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import "hardhat/console.sol";
+
 
 contract Pool is IUniswapV3MintCallback {
   using TickMath for uint160;
@@ -95,7 +97,7 @@ contract Pool is IUniswapV3MintCallback {
     if (amount0Owed > 0)
       TransferHelper.safeTransfer(_token0(), msg.sender, amount0Owed);
     if (amount1Owed > 0)
-      TransferHelper.safeTransfer(_token1(), msg.sender, amount0Owed);
+      TransferHelper.safeTransfer(_token1(), msg.sender, amount1Owed);
   }
 
   //TODO: Condition?
@@ -107,14 +109,14 @@ contract Pool is IUniswapV3MintCallback {
     uint160 sqrtHiPriceX96 = _calSqrtHighPrice(sqrtPriceX96, SQRT_PRICE_RATE_X96);
     uint160 sqrtLoPriceX96 = _calSqrtLowPrice(sqrtPriceX96, SQRT_PRICE_RATE_X96);
 
-    int24 upperTick = sqrtHiPriceX96.getTickAtSqrtRatio();
-    int24 lowerTick = sqrtLoPriceX96.getTickAtSqrtRatio();
+    int24 upperTick = sqrtHiPriceX96.getTickAtSqrtRatio() / 10 * 10;
+    int24 lowerTick = sqrtLoPriceX96.getTickAtSqrtRatio() / 10 * 10;
 
     //TODO: calculate liquidity base on baseAmountDesired and quoteAmountDesired
     uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
       sqrtPriceX96,
-      sqrtLoPriceX96,
-      sqrtHiPriceX96,
+      TickMath.getSqrtRatioAtTick(lowerTick),
+      TickMath.getSqrtRatioAtTick(upperTick),
       BASE_TOKEN_0 ? baseAmountDesired : quoteAmountDesired,
       BASE_TOKEN_0 ? quoteAmountDesired : baseAmountDesired
     );
@@ -125,7 +127,6 @@ contract Pool is IUniswapV3MintCallback {
       liquidity, 
       bytes("")
     );
-
     // Update state
     _liquidity = liquidity;
     _currentLowerTick = lowerTick;

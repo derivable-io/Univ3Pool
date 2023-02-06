@@ -3,8 +3,10 @@ const {
 } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
 const chai = require("chai");
-const { bn, numberToWei, stringToBytes32 } = require("./shared/utilities");
+const { bn, numberToWei, stringToBytes32, encodeSqrtX96 } = require("./shared/utilities");
 const expect = chai.expect;
+
+const pe = (x) => ethers.utils.parseEther(String(x))
 
 describe("Pool", () => {
   async function setup() {
@@ -27,21 +29,27 @@ describe("Pool", () => {
     const usdc = await erc20Factory.deploy(numberToWei(100000000));
     const weth = await WETH.deploy();
     await uniswapFactory.createPool(usdc.address, weth.address, 500)
+    const compiledUniswapPool = require("./compiled/UniswapV3Pool.json");
     const pairAddress = await uniswapFactory.getPool(usdc.address, weth.address, 500)
+    const uniswapPair = new ethers.Contract(pairAddress, compiledUniswapPool.abi, signer);
   
     const sqrtPriceRangeRateX96 = bn(2).pow(96).mul('104880884817').div('100000000000')
     // deploy
+    const baseToken0 = weth.address.toLowerCase() < usdc.address.toLowerCase()
     const pool = await PoolFactory.deploy(
       pairAddress,
       sqrtPriceRangeRateX96.toString(),
-      weth.address < usdc.address
+      weth.address.toLowerCase() < usdc.address.toLowerCase()
     )
+    const initPriceX96 = encodeSqrtX96(baseToken0 ? 1500 : 1, baseToken0 ? 1 : 1500)
+    await uniswapPair.initialize(initPriceX96)
+
     return {
       owner,
       pool,
       usdc,
       weth,
-      pairAddress
+      uniswapPair
     }
   } 
 
@@ -50,13 +58,45 @@ describe("Pool", () => {
       pool,
       usdc,
       weth,
-      pairAddress
+      uniswapPair
     } = await loadFixture(setup);
     const pair = await pool.COLLATERAL_TOKEN();
     const baseToken = await pool.TOKEN_BASE();
     const quoteToken = await pool.TOKEN_QUOTE();
     expect(baseToken).to.equal(weth.address);
     expect(quoteToken).to.equal(usdc.address);
-    expect(pair).to.equal(pairAddress);
+    expect(pair).to.equal(uniswapPair.address);
+  })
+
+  it("recompose", async () => {
+    const {
+      pool,
+      usdc,
+      weth,
+      uniswapPair
+    } = await loadFixture(setup);
+    await usdc.transfer(pool.address, '1500000')
+    await weth.deposit({ value: pe(100)})
+    await weth.transfer(pool.address, '1000')
+    
+    await pool.recompose('1000', '1500000')
+
+    console.log(await pool.liquidityValueInQuote())
+  })
+
+  it("recompose twice", async () => {
+    const {
+      pool,
+      usdc,
+      weth,
+      uniswapPair
+    } = await loadFixture(setup);
+    await usdc.transfer(pool.address, '1500000')
+    await weth.deposit({ value: pe(100)})
+    await weth.transfer(pool.address, '1000')
+    
+    await pool.recompose('1000', '1500000')
+
+    console.log(await pool.liquidityValueInQuote())
   })
 })

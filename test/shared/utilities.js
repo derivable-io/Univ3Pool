@@ -153,6 +153,13 @@ function decodePowers(powersBytes) {
     return powers
 }
 
+function encodeSqrtX96(reserve1, reserve0) {
+    console.log(reserve1/reserve0)
+    return bn((Math.sqrt(reserve1/reserve0)*10**12).toFixed(0))
+        .mul(bn(2).pow(96))
+        .div(10**12)
+}
+
 module.exports = {
     stringToBytes32,
     calculateSwapToPrice,
@@ -162,4 +169,5 @@ module.exports = {
     swapToSetPrice,
     encodePowers,
     decodePowers,
+    encodeSqrtX96
 }
