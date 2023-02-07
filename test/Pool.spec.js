@@ -22,6 +22,9 @@ describe("Pool", () => {
     const compiledUniswapFactory = require("./compiled/UniswapV3Factory.json");
     const UniswapFactory = await new ethers.ContractFactory(compiledUniswapFactory.abi, compiledUniswapFactory.bytecode, signer);
     const uniswapFactory = await UniswapFactory.deploy()
+    // uniswap router
+    const compiledUniswapv3Router = require("@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json");
+    const Uniswapv3Router = new ethers.ContractFactory(compiledUniswapv3Router.abi, compiledUniswapv3Router.bytecode, signer);
     // Derivable Pool factory
     const PoolFactory = await ethers.getContractFactory("Pool")
     
@@ -29,6 +32,7 @@ describe("Pool", () => {
     const usdc = await erc20Factory.deploy(numberToWei(100000000));
     const weth = await WETH.deploy();
     await uniswapFactory.createPool(usdc.address, weth.address, 500)
+    const uniswapv3Router = await Uniswapv3Router.deploy(uniswapFactory.address, weth.address);
     const compiledUniswapPool = require("./compiled/UniswapV3Pool.json");
     const pairAddress = await uniswapFactory.getPool(usdc.address, weth.address, 500)
     const uniswapPair = new ethers.Contract(pairAddress, compiledUniswapPool.abi, signer);
@@ -49,7 +53,8 @@ describe("Pool", () => {
       pool,
       usdc,
       weth,
-      uniswapPair
+      uniswapPair,
+      uniswapv3Router
     }
   } 
 
@@ -68,7 +73,7 @@ describe("Pool", () => {
     expect(pair).to.equal(uniswapPair.address);
   })
 
-  it("recompose", async () => {
+  it("Recompose", async () => {
     const {
       pool,
       usdc,
@@ -84,7 +89,7 @@ describe("Pool", () => {
     console.log(await pool.liquidityValueInQuote())
   })
 
-  it("recompose twice", async () => {
+  it("Liquidity value", async () => {
     const {
       pool,
       usdc,
@@ -97,6 +102,44 @@ describe("Pool", () => {
     
     await pool.recompose('1000', '1500000')
 
-    console.log(await pool.liquidityValueInQuote())
+    const usdcAmount = await usdc.balanceOf(uniswapPair.address)
+    const wethAmount = await weth.balanceOf(uniswapPair.address)
+    const expected = usdcAmount.add(wethAmount * 1500).toNumber()
+    const actual = (await pool.liquidityValueInQuote()).toNumber()
+
+    expect(expected/actual).to.closeTo(1, 0.0001)
+  })
+
+  it("Swap -> recompose", async () => {
+    const {
+      owner,
+      pool,
+      usdc,
+      weth,
+      uniswapv3Router
+    } = await loadFixture(setup);
+    await usdc.approve(uniswapv3Router.address, '100000000000')
+
+    await usdc.transfer(pool.address, '1500000')
+    await weth.deposit({ value: pe(100)})
+    await weth.transfer(pool.address, '1000')
+    await pool.recompose('1000', '1500000')
+
+    await uniswapv3Router.exactOutputSingle({
+      tokenIn: usdc.address, 
+      tokenOut: weth.address,
+      fee: 500,
+      sqrtPriceLimitX96: weth.address.toLowerCase() < usdc.address.toLowerCase()
+        ? bn('1461446703485210103287273052203988822378723970341')
+        : bn('4295128740'),
+      recipient: owner.address,
+      deadline: new Date().getTime() + 100000,
+      amountOut: '100',
+      amountInMaximum: '1500000',
+    })
+
+    await usdc.transfer(pool.address, '1500000')
+    await weth.transfer(pool.address, '1000')
+    await pool.recompose('1000', '1500000')
   })
 })

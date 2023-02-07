@@ -42,13 +42,26 @@ contract Pool is IUniswapV3MintCallback {
     BASE_TOKEN_0 = baseToken0;
   }
 
-  function _decompose() internal returns (uint amount0Recieved, uint amount1Recieved) {
-    if (_liquidity > 0) 
+  function _decompose() internal returns (uint baseAmountRecieved, uint quoteAmountRecieved) {
+    uint amount0Recieved;
+    uint amount1Recieved;
+    if (_liquidity > 0) {
       (amount0Recieved, amount1Recieved) = IUniswapV3Pool(COLLATERAL_TOKEN).burn(
         _currentLowerTick, 
         _currentUpperTick, 
         _liquidity
       );
+      IUniswapV3Pool(COLLATERAL_TOKEN).collect(
+        address(this),
+        _currentLowerTick,
+        _currentUpperTick,
+        uint128(amount0Recieved),
+        uint128(amount1Recieved)
+      );
+      baseAmountRecieved = BASE_TOKEN_0 ? amount0Recieved : amount1Recieved;
+      quoteAmountRecieved = BASE_TOKEN_0 ? amount1Recieved : amount0Recieved;
+    }
+      
   }
 
   function _safeTransferFrom(address token, address sender, address to, uint amount) internal {
@@ -103,7 +116,10 @@ contract Pool is IUniswapV3MintCallback {
   //TODO: Condition?
   function recompose(uint baseAmountDesired, uint quoteAmountDesired) external {
     //TODO: Decompose
-    _decompose();
+    (uint256 baseAmountRecieved, uint256 quoteAmountRecieved) = _decompose();
+
+    baseAmountDesired += baseAmountRecieved;
+    quoteAmountDesired += quoteAmountRecieved;
 
     (uint160 sqrtPriceX96,,,,,,) = IUniswapV3Pool(COLLATERAL_TOKEN).slot0();
     uint160 sqrtHiPriceX96 = _calSqrtHighPrice(sqrtPriceX96, SQRT_PRICE_RATE_X96);
