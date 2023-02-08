@@ -152,6 +152,10 @@ contract Pool is IUniswapV3MintCallback {
   function liquidityValueInQuote() external view returns (uint256) {
     (uint160 sqrtPriceX96, int24 tick,,,,,) = IUniswapV3Pool(COLLATERAL_TOKEN).slot0();
     if (_liquidity > 0) {
+      console.log('liquidity > 0');
+      console.logInt(tick);
+      console.logInt(_currentLowerTick);
+      console.logInt(_currentUpperTick);
       uint256 amount0;
       uint256 amount1;
       if (tick < _currentLowerTick) {

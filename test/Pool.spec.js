@@ -25,6 +25,9 @@ describe("Pool", () => {
     // uniswap router
     const compiledUniswapv3Router = require("@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json");
     const Uniswapv3Router = new ethers.ContractFactory(compiledUniswapv3Router.abi, compiledUniswapv3Router.bytecode, signer);
+    // uniswap PM
+    const compiledUniswapv3PositionManager = require("@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json");
+    const Uniswapv3PositionManager = new ethers.ContractFactory(compiledUniswapv3PositionManager.abi, compiledUniswapv3PositionManager.bytecode, signer);
     // Derivable Pool factory
     const PoolFactory = await ethers.getContractFactory("Pool")
     
@@ -33,6 +36,9 @@ describe("Pool", () => {
     const weth = await WETH.deploy();
     await uniswapFactory.createPool(usdc.address, weth.address, 500)
     const uniswapv3Router = await Uniswapv3Router.deploy(uniswapFactory.address, weth.address);
+
+    const uniswapv3PositionManager = await Uniswapv3PositionManager.deploy(uniswapFactory.address, weth.address, '0x0000000000000000000000000000000000000000')
+
     const compiledUniswapPool = require("./compiled/UniswapV3Pool.json");
     const pairAddress = await uniswapFactory.getPool(usdc.address, weth.address, 500)
     const uniswapPair = new ethers.Contract(pairAddress, compiledUniswapPool.abi, signer);
@@ -54,7 +60,8 @@ describe("Pool", () => {
       usdc,
       weth,
       uniswapPair,
-      uniswapv3Router
+      uniswapv3Router,
+      uniswapv3PositionManager
     }
   } 
 
@@ -141,5 +148,116 @@ describe("Pool", () => {
     await usdc.transfer(pool.address, '1500000')
     await weth.transfer(pool.address, '1000')
     await pool.recompose('1000', '1500000')
+  })
+
+  it("Out range to the right", async () => {
+    const {
+      owner,
+      pool,
+      usdc,
+      weth,
+      uniswapv3Router,
+      uniswapv3PositionManager
+    } = await loadFixture(setup);
+
+    await usdc.approve(uniswapv3PositionManager.address, ethers.constants.MaxUint256);
+    await weth.approve(uniswapv3PositionManager.address, ethers.constants.MaxUint256);
+    // Add liquidity in the whole space
+    await uniswapv3PositionManager.mint({
+      token0: usdc.address,
+      token1: weth.address,
+      fee: 500,
+      tickLower: Math.ceil(-887272 / 10) * 10,
+      tickUpper: Math.floor(887272 / 10) * 10,
+      amount0Desired: '100000000000000000000',
+      amount1Desired: '100000000000000000000',
+      amount0Min: 0,
+      amount1Min: 0,
+      recipient: owner.address,
+      deadline: new Date().getTime() + 100000
+    }, {
+        value: '100000000000000000000',
+        gasLimit: 30000000
+    })
+
+    await usdc.transfer(pool.address, '1500000')
+    await weth.deposit({ value: pe(100)})
+    await weth.transfer(pool.address, '1000')
+    await pool.recompose('1000', '1500000')
+
+    await weth.approve(uniswapv3Router.address, '1500000000000000000')
+    // Swap to out Pool's position range to the right
+    await uniswapv3Router.exactOutputSingle({
+      tokenIn: weth.address, 
+      tokenOut: usdc.address,
+      fee: 500,
+      sqrtPriceLimitX96: usdc.address.toLowerCase() < weth.address.toLowerCase()
+        ? bn('1461446703485210103287273052203988822378723970341')
+        : bn('4295128740'),
+      recipient: owner.address,
+      deadline: new Date().getTime() + 100000,
+      amountOut: '15000000000000000000',
+      amountInMaximum: '15000000000000000000',
+    })
+    const actual = (await pool.liquidityValueInQuote()).toNumber()
+    const expected = 0
+    expect(expected).to.equal(actual)
+  })
+
+  it("Out range to the left", async () => {
+    const {
+      owner,
+      pool,
+      usdc,
+      weth,
+      uniswapv3Router,
+      uniswapv3PositionManager
+    } = await loadFixture(setup);
+
+    await usdc.approve(uniswapv3PositionManager.address, ethers.constants.MaxUint256);
+    await weth.approve(uniswapv3PositionManager.address, ethers.constants.MaxUint256);
+    // Add liquidity in the whole space
+    await uniswapv3PositionManager.mint({
+      token0: usdc.address,
+      token1: weth.address,
+      fee: 500,
+      tickLower: Math.ceil(-887272 / 10) * 10,
+      tickUpper: Math.floor(887272 / 10) * 10,
+      amount0Desired: '100000000000000000000',
+      amount1Desired: '100000000000000000000',
+      amount0Min: 0,
+      amount1Min: 0,
+      recipient: owner.address,
+      deadline: new Date().getTime() + 100000
+    }, {
+        value: '100000000000000000000',
+        gasLimit: 30000000
+    })
+
+    await usdc.transfer(pool.address, '1500000')
+    await weth.deposit({ value: pe(100)})
+    await weth.transfer(pool.address, '1000')
+    await pool.recompose('1000', '1500000')
+
+    await usdc.approve(uniswapv3Router.address, '150000000000000000000')
+    console.log(owner.address)
+    console.log(uniswapv3Router.address)
+    // Swap to out Pool's position range to the left
+    await uniswapv3Router.exactOutputSingle({
+      tokenIn: usdc.address, 
+      tokenOut: weth.address,
+      fee: 500,
+      sqrtPriceLimitX96: weth.address.toLowerCase() < usdc.address.toLowerCase()
+        ? bn('1461446703485210103287273052203988822378723970341')
+        : bn('4295128740'),
+      recipient: owner.address,
+      deadline: new Date().getTime() + 100000,
+      amountOut: '1000000',
+      amountInMaximum: '10000000000000',
+    })
+    const actual = (await pool.liquidityValueInQuote()).toNumber()
+    const expected = 2998500
+    expect(expected).to.equal(actual)
+    await pool.recompose('0', '0')
   })
 })
